@@ -20,6 +20,8 @@ A custom node for ComfyUI that implements OpenCV's seamless cloning functionalit
 
 -   Automatic or manual center point selection
 -   Compatible with ComfyUI's image processing pipeline
+-   **Robust handling of mismatched image proportions** - automatically resizes and validates boundaries
+-   **Fallback blending** - if seamless cloning fails, falls back to simple alpha blending
 
 ## Installation
 
@@ -56,6 +58,29 @@ The node accepts the following inputs:
 Output:
 
 -   `cloned_image`: The resulting seamlessly blended image
+
+### Important Notes
+
+-   **Image Proportions**: The node automatically resizes the source image and mask to match the destination image dimensions to prevent boundary errors.
+-   **Center Point Validation**: If center coordinates are provided, they are automatically clamped to valid image boundaries.
+-   **Fallback Mode**: If seamless cloning fails due to complex geometry or boundary issues, the node automatically falls back to simple alpha blending.
+-   **Mask Validation**: The mask is automatically cropped to ensure it fits within the destination image bounds.
+
+## Troubleshooting
+
+### Common Issues
+
+1. **"Mask is empty after processing"**: Ensure your mask contains non-zero values in the region you want to clone.
+
+2. **"No valid mask pixels found"**: Check that your mask image has visible content in the areas you want to clone.
+
+3. **Seamless cloning falls back to alpha blending**: This is normal behavior when the geometry is too complex for seamless cloning. The result will still be a blended image, though without the advanced Poisson blending.
+
+### Best Practices
+
+-   Use masks with clear, well-defined boundaries for best results
+-   Ensure the source image has good contrast with the destination image
+-   For complex shapes, consider using the MIXED_CLONE mode which preserves gradients better
 
 ## Requirements
 

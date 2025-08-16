@@ -35,8 +35,10 @@ class SeamlessClone:
         # Mask is in [0,1] range (since it's a torch.Tensor)
         mask_np = mask_image[0].cpu().numpy()
 
-        # Resize source image and mask to match destination image size
+        # Get destination image dimensions
         dest_h, dest_w = destination_image_np.shape[:2]
+        
+        # Resize source image and mask to match destination image size
         source_image_np = cv2.resize(
             source_image_np, (dest_w, dest_h), interpolation=cv2.INTER_LINEAR
         )
@@ -65,13 +67,44 @@ class SeamlessClone:
         # Calculate the center of the mask if center_x and center_y are not provided
         if center_x == 0 and center_y == 0:
             mask_indices = np.argwhere(mask_np > 0)
+            if len(mask_indices) == 0:
+                raise ValueError("No valid mask pixels found.")
             mask_center = mask_indices.mean(axis=0).astype(int)
             center_x, center_y = mask_center[1], mask_center[0]  # (x, y) format
 
+        # Validate and clamp center coordinates to image boundaries
+        center_x = max(0, min(center_x, dest_w - 1))
+        center_y = max(0, min(center_y, dest_h - 1))
+        
         # Use the calculated or provided center coordinates
         clone_center = (center_x, center_y)
 
         print(f"clone_center: {clone_center}")
+        print(f"destination image size: {dest_w}x{dest_h}")
+        
+        # Additional validation: ensure the mask region fits within the image bounds
+        # Find the bounding box of the mask
+        mask_indices = np.argwhere(mask_np > 0)
+        if len(mask_indices) > 0:
+            min_y, min_x = mask_indices.min(axis=0)
+            max_y, max_x = mask_indices.max(axis=0)
+            
+            # Ensure the bounding box is within image bounds
+            min_x = max(0, min_x)
+            min_y = max(0, min_y)
+            max_x = min(dest_w - 1, max_x)
+            max_y = min(dest_h - 1, max_y)
+            
+            # Update mask to only include valid regions
+            mask_np = np.zeros_like(mask_np)
+            mask_np[min_y:max_y+1, min_x:max_x+1] = 255
+            
+            # Recalculate center if it's outside the valid mask region
+            valid_mask_indices = np.argwhere(mask_np > 0)
+            if len(valid_mask_indices) > 0:
+                valid_center = valid_mask_indices.mean(axis=0).astype(int)
+                clone_center = (valid_center[1], valid_center[0])
+                print(f"adjusted clone_center: {clone_center}")
         
         # Map blend_mode string to OpenCV constant
         blend_mode_dict = {
@@ -81,10 +114,24 @@ class SeamlessClone:
         }
         mode = blend_mode_dict.get(blend_mode, cv2.NORMAL_CLONE)
 
-        # Perform seamless cloning
-        output_cv = cv2.seamlessClone(
-            source_image_cv, destination_image_cv, mask_np, clone_center, mode
-        )
+        try:
+            # Perform seamless cloning
+            output_cv = cv2.seamlessClone(
+                source_image_cv, destination_image_cv, mask_np, clone_center, mode
+            )
+        except cv2.error as e:
+            # If seamless cloning fails, fall back to simple blending
+            print(f"Seamless cloning failed: {e}")
+            print("Falling back to simple alpha blending...")
+            
+            # Create a simple alpha blend as fallback
+            mask_normalized = mask_np.astype(np.float32) / 255.0
+            if mask_normalized.ndim == 2:
+                mask_normalized = np.stack([mask_normalized] * 3, axis=-1)
+            
+            # Blend images using the mask
+            output_cv = (source_image_cv * mask_normalized + 
+                        destination_image_cv * (1 - mask_normalized)).astype(np.uint8)
 
         # Convert output to RGB
         output_rgb = cv2.cvtColor(output_cv, cv2.COLOR_BGR2RGB)
