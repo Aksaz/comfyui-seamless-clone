@@ -66,11 +66,19 @@ class SeamlessClone:
 
         # Calculate the center of the mask if center_x and center_y are not provided
         if center_x == 0 and center_y == 0:
+            # Use the geometric center of the mask bounding box
             mask_indices = np.argwhere(mask_np > 0)
             if len(mask_indices) == 0:
                 raise ValueError("No valid mask pixels found.")
-            mask_center = mask_indices.mean(axis=0).astype(int)
-            center_x, center_y = mask_center[1], mask_center[0]  # (x, y) format
+            
+            # Calculate bounding box center instead of center of mass
+            min_y, min_x = mask_indices.min(axis=0)
+            max_y, max_x = mask_indices.max(axis=0)
+            center_x = (min_x + max_x) // 2
+            center_y = (min_y + max_y) // 2
+            
+            print(f"Mask bounds: min_y={min_y}, max_y={max_y}, min_x={min_x}, max_x={max_x}")
+            print(f"Geometric center (corrected): ({center_x}, {center_y})")
 
         # Validate and clamp center coordinates to image boundaries
         center_x = max(0, min(center_x, dest_w - 1))
