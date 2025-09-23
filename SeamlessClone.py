@@ -82,26 +82,29 @@ class SeamlessClone:
         print(f"clone_center: {clone_center}")
         print(f"destination image size: {dest_w}x{dest_h}")
         
-        # Ensure mask is within image bounds by clipping coordinates
-        # This preserves the exact mask shape while ensuring it fits within the image
+        # Additional validation: ensure the mask region fits within the image bounds
+        # Find the bounding box of the mask
         mask_indices = np.argwhere(mask_np > 0)
         if len(mask_indices) > 0:
-            # Check if any mask pixels are outside image bounds
-            valid_mask = (mask_indices[:, 0] >= 0) & (mask_indices[:, 0] < dest_h) & \
-                        (mask_indices[:, 1] >= 0) & (mask_indices[:, 1] < dest_w)
+            min_y, min_x = mask_indices.min(axis=0)
+            max_y, max_x = mask_indices.max(axis=0)
             
-            if not np.all(valid_mask):
-                # Remove invalid mask pixels that are outside image bounds
-                valid_indices = mask_indices[valid_mask]
-                mask_np = np.zeros_like(mask_np)
-                if len(valid_indices) > 0:
-                    mask_np[valid_indices[:, 0], valid_indices[:, 1]] = 255
-                    # Recalculate center based on valid mask pixels
-                    valid_center = valid_indices.mean(axis=0).astype(int)
-                    clone_center = (valid_center[1], valid_center[0])
-                    print(f"adjusted clone_center: {clone_center}")
-                else:
-                    raise ValueError("No valid mask pixels found within image bounds.")
+            # Ensure the bounding box is within image bounds
+            min_x = max(0, min_x)
+            min_y = max(0, min_y)
+            max_x = min(dest_w - 1, max_x)
+            max_y = min(dest_h - 1, max_y)
+            
+            # Update mask to only include valid regions
+            mask_np = np.zeros_like(mask_np)
+            mask_np[min_y:max_y+1, min_x:max_x+1] = 255
+            
+            # Recalculate center if it's outside the valid mask region
+            valid_mask_indices = np.argwhere(mask_np > 0)
+            if len(valid_mask_indices) > 0:
+                valid_center = valid_mask_indices.mean(axis=0).astype(int)
+                clone_center = (valid_center[1], valid_center[0])
+                print(f"adjusted clone_center: {clone_center}")
         
         # Map blend_mode string to OpenCV constant
         blend_mode_dict = {
