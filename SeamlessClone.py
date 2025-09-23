@@ -38,6 +38,9 @@ class SeamlessClone:
         # Get destination image dimensions
         dest_h, dest_w = destination_image_np.shape[:2]
         
+        # Get source image dimensions
+        source_h, source_w = source_image_np.shape[:2]
+        
         # Resize source image and mask to match destination image size
         source_image_np = cv2.resize(
             source_image_np, (dest_w, dest_h), interpolation=cv2.INTER_LINEAR
@@ -78,7 +81,34 @@ class SeamlessClone:
             center_y = (min_y + max_y) // 2
             
             print(f"Mask bounds: min_y={min_y}, max_y={max_y}, min_x={min_x}, max_x={max_x}")
-            print(f"Geometric center (corrected): ({center_x}, {center_y})")
+            print(f"Geometric center: ({center_x}, {center_y})")
+        else:
+            # When custom center is provided, we need to ensure the source image is positioned correctly
+            # The source image is already resized to match destination, so we use the provided center directly
+            print(f"Using custom center: ({center_x}, {center_y})")
+            
+            # When using custom center, we might need to adjust the source image to align with the mask
+            # Get the mask bounds to understand where the actual content should be
+            mask_indices = np.argwhere(mask_np > 0)
+            if len(mask_indices) > 0:
+                min_y, min_x = mask_indices.min(axis=0)
+                max_y, max_x = mask_indices.max(axis=0)
+                mask_center_x = (min_x + max_x) // 2
+                mask_center_y = (min_y + max_y) // 2
+                
+                # Calculate offset needed to align source with the custom center
+                offset_x = center_x - mask_center_x
+                offset_y = center_y - mask_center_y
+                
+                print(f"Mask center: ({mask_center_x}, {mask_center_y})")
+                print(f"Offset needed: ({offset_x}, {offset_y})")
+                
+                # Apply offset to the source image
+                if offset_x != 0 or offset_y != 0:
+                    # Create a translation matrix
+                    M = np.float32([[1, 0, offset_x], [0, 1, offset_y]])
+                    source_image_cv = cv2.warpAffine(source_image_cv, M, (dest_w, dest_h))
+                    print(f"Applied translation to source image")
 
         # Validate and clamp center coordinates to image boundaries
         center_x = max(0, min(center_x, dest_w - 1))
