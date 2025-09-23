@@ -37,6 +37,14 @@ class SeamlessClone:
 
         # Get destination image dimensions
         dest_h, dest_w = destination_image_np.shape[:2]
+        
+        # Resize source image and mask to match destination image size
+        source_image_np = cv2.resize(
+            source_image_np, (dest_w, dest_h), interpolation=cv2.INTER_LINEAR
+        )
+        mask_np = cv2.resize(
+            mask_np, (dest_w, dest_h), interpolation=cv2.INTER_LINEAR
+        )
 
         # Ensure mask is single-channel
         if mask_np.ndim == 3 and mask_np.shape[2] > 1:
@@ -58,16 +66,11 @@ class SeamlessClone:
 
         # Calculate the center of the mask if center_x and center_y are not provided
         if center_x == 0 and center_y == 0:
-            # If the mask has the same dimensions as the destination, infer center from mask
-            if mask_np.shape[0] == dest_h and mask_np.shape[1] == dest_w:
-                mask_indices = np.argwhere(mask_np > 0)
-                if len(mask_indices) == 0:
-                    raise ValueError("No valid mask pixels found.")
-                mask_center = mask_indices.mean(axis=0).astype(int)
-                center_x, center_y = mask_center[1], mask_center[0]  # (x, y) format
-            else:
-                # Otherwise, default to destination center to avoid misplacement
-                center_x, center_y = dest_w // 2, dest_h // 2
+            mask_indices = np.argwhere(mask_np > 0)
+            if len(mask_indices) == 0:
+                raise ValueError("No valid mask pixels found.")
+            mask_center = mask_indices.mean(axis=0).astype(int)
+            center_x, center_y = mask_center[1], mask_center[0]  # (x, y) format
 
         # Validate and clamp center coordinates to image boundaries
         center_x = max(0, min(center_x, dest_w - 1))
@@ -79,22 +82,26 @@ class SeamlessClone:
         print(f"clone_center: {clone_center}")
         print(f"destination image size: {dest_w}x{dest_h}")
         
-        # Ensure mask is within destination image bounds by clipping coordinates when mask size matches destination
-        if mask_np.shape[0] == dest_h and mask_np.shape[1] == dest_w:
-            mask_indices = np.argwhere(mask_np > 0)
-            if len(mask_indices) > 0:
-                valid_mask = (mask_indices[:, 0] >= 0) & (mask_indices[:, 0] < dest_h) & \
-                            (mask_indices[:, 1] >= 0) & (mask_indices[:, 1] < dest_w)
-                if not np.all(valid_mask):
-                    valid_indices = mask_indices[valid_mask]
-                    mask_np = np.zeros_like(mask_np)
-                    if len(valid_indices) > 0:
-                        mask_np[valid_indices[:, 0], valid_indices[:, 1]] = 255
-                        valid_center = valid_indices.mean(axis=0).astype(int)
-                        clone_center = (valid_center[1], valid_center[0])
-                        print(f"adjusted clone_center: {clone_center}")
-                    else:
-                        raise ValueError("No valid mask pixels found within image bounds.")
+        # Ensure mask is within image bounds by clipping coordinates
+        # This preserves the exact mask shape while ensuring it fits within the image
+        mask_indices = np.argwhere(mask_np > 0)
+        if len(mask_indices) > 0:
+            # Check if any mask pixels are outside image bounds
+            valid_mask = (mask_indices[:, 0] >= 0) & (mask_indices[:, 0] < dest_h) & \
+                        (mask_indices[:, 1] >= 0) & (mask_indices[:, 1] < dest_w)
+            
+            if not np.all(valid_mask):
+                # Remove invalid mask pixels that are outside image bounds
+                valid_indices = mask_indices[valid_mask]
+                mask_np = np.zeros_like(mask_np)
+                if len(valid_indices) > 0:
+                    mask_np[valid_indices[:, 0], valid_indices[:, 1]] = 255
+                    # Recalculate center based on valid mask pixels
+                    valid_center = valid_indices.mean(axis=0).astype(int)
+                    clone_center = (valid_center[1], valid_center[0])
+                    print(f"adjusted clone_center: {clone_center}")
+                else:
+                    raise ValueError("No valid mask pixels found within image bounds.")
         
         # Map blend_mode string to OpenCV constant
         blend_mode_dict = {
@@ -105,13 +112,7 @@ class SeamlessClone:
         mode = blend_mode_dict.get(blend_mode, cv2.NORMAL_CLONE)
 
         try:
-            # Perform seamless cloning using the original source and its mask.
-            # OpenCV expects mask to be the same size as source.
-            if mask_np.shape[:2] != source_image_cv.shape[:2]:
-                # Align mask to source size without introducing new non-zero regions
-                mask_np = cv2.resize(mask_np, (source_image_cv.shape[1], source_image_cv.shape[0]), interpolation=cv2.INTER_NEAREST)
-                mask_np = (mask_np > 127).astype(np.uint8) * 255
-
+            # Perform seamless cloning
             output_cv = cv2.seamlessClone(
                 source_image_cv, destination_image_cv, mask_np, clone_center, mode
             )
